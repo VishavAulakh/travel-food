@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
 } from "react-native";
 import { router } from "expo-router";
 import { MotiView } from "moti";
@@ -13,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../../components/ui/Button";
 import { haptics } from "../../lib/haptics";
+import { api } from "../../lib/api";
 
 export default function RiderLoginScreen() {
   const [phone, setPhone] = useState("");
@@ -31,8 +33,10 @@ export default function RiderLoginScreen() {
     haptics.medium();
     setLoading(true);
     try {
-      await new Promise((r) => setTimeout(r, 800));
+      await api.post('/riders/auth/send-otp', { phone: '+91' + digits });
       router.push({ pathname: "/(auth)/otp", params: { phone: digits } });
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to send OTP. Please try again.');
     } finally {
       setLoading(false);
     }

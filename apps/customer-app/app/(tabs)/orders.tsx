@@ -14,6 +14,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from "react-native-reanimated";
+import { useQuery } from "@tanstack/react-query";
 
 import {
   AnimatedListItem,
@@ -23,9 +24,43 @@ import {
   PressableScale,
   SectionHeader,
 } from "../../components";
-import { activeOrders, pastOrders, type Order } from "../../lib/mock/orders";
+import type { Order } from "../../lib/mock/orders";
 import { spring } from "../../lib/animations";
 import { haptics } from "../../lib/haptics";
+import { useAuthStore } from "../../store/auth";
+import { api } from "../../lib/api";
+
+// Map API order fields to the Order shape that OrderCard expects
+function mapApiOrder(o: any): Order {
+  return {
+    id: o.id,
+    shortId: o.shortId ?? `GO-${String(o.id).slice(-5).toUpperCase()}`,
+    restaurantId: o.restaurantId ?? o.restaurant?.id ?? "",
+    restaurantName: o.restaurantName ?? o.restaurant?.name ?? "Restaurant",
+    restaurantImage: o.restaurantImage ?? o.restaurant?.logoUrl ?? "",
+    restaurantArea: o.restaurantArea ?? o.restaurant?.address ?? "",
+    items: (o.items ?? []).map((i: any) => ({
+      id: i.id,
+      name: i.name ?? i.menuItemName ?? "",
+      qty: i.qty ?? i.quantity ?? 1,
+      pricePaise: i.pricePaise ?? i.unitPricePaise ?? 0,
+      isVeg: i.isVeg ?? false,
+    })),
+    itemsTotalPaise: o.itemsTotalPaise ?? o.subtotalPaise ?? 0,
+    deliveryFeePaise: o.deliveryFeePaise ?? 0,
+    taxPaise: o.taxPaise ?? 0,
+    discountPaise: o.discountPaise ?? 0,
+    totalPaise: o.totalPaise ?? o.grandTotalPaise ?? 0,
+    status: o.status,
+    placedAt: o.placedAt ?? o.createdAt ?? new Date().toISOString(),
+    expectedAt: o.expectedAt ?? o.estimatedDeliveryAt,
+    deliveredAt: o.deliveredAt,
+    addressId: o.addressId ?? o.address?.id ?? "",
+    paymentMethod: o.paymentMethod ?? "upi",
+    paymentLabel: o.paymentLabel ?? o.paymentMethod ?? "UPI",
+    riderId: o.riderId,
+  };
+}
 
 type TabKey = "active" | "past" | "cancelled";
 
@@ -74,15 +109,28 @@ export default function OrdersScreen() {
   const [tab, setTab] = useState<TabKey>("active");
   const [refreshing, setRefreshing] = useState(false);
   const [segWidth, setSegWidth] = useState(0);
+  const token = useAuthStore((s) => s.token);
 
-  const active = useMemo(() => activeOrders(), [refreshing]);
+  const { data: allOrders = [], isLoading, refetch } = useQuery({
+    queryKey: ["orders"],
+    queryFn: () =>
+      token
+        ? api.get<any[]>("/delivery/orders", token).then((data) => data.map(mapApiOrder))
+        : Promise.resolve([] as Order[]),
+    enabled: !!token,
+  });
+
+  const active = useMemo(
+    () => allOrders.filter((o) => !["delivered", "cancelled"].includes(o.status)),
+    [allOrders]
+  );
   const past = useMemo(
-    () => pastOrders().filter((o) => o.status === "delivered"),
-    [refreshing]
+    () => allOrders.filter((o) => o.status === "delivered"),
+    [allOrders]
   );
   const cancelled = useMemo(
-    () => pastOrders().filter((o) => o.status === "cancelled"),
-    [refreshing]
+    () => allOrders.filter((o) => o.status === "cancelled"),
+    [allOrders]
   );
 
   const counts: Record<TabKey, number> = {
@@ -110,11 +158,12 @@ export default function OrdersScreen() {
     [tab, segmentWidth, indicatorX]
   );
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
+  const onRefresh = useCallback(async () => {
     haptics.light();
-    setTimeout(() => setRefreshing(false), 600);
-  }, []);
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
 
   const onReorder = useCallback((order: Order) => {
     haptics.medium();

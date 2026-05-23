@@ -4,6 +4,7 @@ import { PrismaModule } from '../../database/prisma.module'
 import { FoodDeliveryController } from './food-delivery.controller'
 import { FoodDeliveryService } from './food-delivery.service'
 import { CustomerAuthGuard } from './guards/customer-auth.guard'
+import { RestaurantAuthGuard } from './guards/restaurant-auth.guard'
 
 @Module({
   imports: [
@@ -13,7 +14,7 @@ import { CustomerAuthGuard } from './guards/customer-auth.guard'
     }),
   ],
   controllers: [FoodDeliveryController],
-  providers: [FoodDeliveryService, CustomerAuthGuard],
+  providers: [FoodDeliveryService, CustomerAuthGuard, RestaurantAuthGuard],
   exports: [FoodDeliveryService],
 })
 export class FoodDeliveryModule {}

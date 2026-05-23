@@ -298,6 +298,39 @@ export class RidersService {
     }
   }
 
+  // ─── Order by ID ───────────────────────────────────────────────────────────
+
+  async getOrderById(riderId: string, orderId: string) {
+    const order = await this.prisma.deliveryOrders.findUnique({
+      where: { id: orderId },
+      include: {
+        items: true,
+        branch: { select: { id: true, name: true, address: true, lat: true, lng: true, phone: true } },
+        customer: { select: { id: true, name: true, phone: true } },
+      },
+    })
+    if (!order) throw new NotFoundException('Order not found')
+    if (order.riderId !== riderId) throw new ForbiddenException('Not assigned to this order')
+    return order
+  }
+
+  // ─── Delivery History ──────────────────────────────────────────────────────
+
+  async getDeliveryHistory(riderId: string, limit: number) {
+    return this.prisma.deliveryOrders.findMany({
+      where: {
+        riderId,
+        status: { in: ['delivered', 'cancelled'] as any[] },
+      },
+      include: {
+        items: true,
+        branch: { select: { id: true, name: true, address: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    })
+  }
+
   // ─── Active Order ──────────────────────────────────────────────────────────
 
   async getActiveOrder(riderId: string) {

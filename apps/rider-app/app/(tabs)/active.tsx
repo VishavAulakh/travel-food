@@ -4,11 +4,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { MotiView } from "moti";
+import { useQuery } from "@tanstack/react-query";
 import { useRiderStore } from "../../store/rider";
-import {
-  getRequestById,
-  deliveryHistory,
-} from "../../lib/mock/deliveryRequests";
+import { api } from "../../lib/api";
+import { type DeliveryRequest } from "../../lib/mock/deliveryRequests";
 import { formatINR } from "../../lib/format";
 import { shadows } from "../../lib/theme";
 import {
@@ -19,12 +18,30 @@ import {
 } from "../../components";
 
 export default function ActiveDeliveryTab() {
-  const activeOrderId = useRiderStore((s) => s.activeOrderId);
-  const request = activeOrderId ? getRequestById(activeOrderId) : null;
+  const { activeOrderId, token } = useRiderStore();
+
+  const { data: request } = useQuery<DeliveryRequest | null>({
+    queryKey: ['delivery-order', activeOrderId],
+    queryFn: () =>
+      activeOrderId && token
+        ? api.get<DeliveryRequest>(`/riders/delivery/${activeOrderId}`, token)
+        : Promise.resolve(null),
+    enabled: !!activeOrderId && !!token,
+    refetchInterval: 10_000,
+  });
+
+  const { data: recentDeliveries = [] } = useQuery<DeliveryRequest[]>({
+    queryKey: ['recent-deliveries'],
+    queryFn: () =>
+      token
+        ? api.get<DeliveryRequest[]>('/riders/me/delivery-history?limit=3', token)
+        : Promise.resolve([]),
+    enabled: !!token && !activeOrderId,
+  });
 
   /* ── No active order ── */
   if (!activeOrderId || !request) {
-    const recentThree = deliveryHistory.slice(0, 3);
+    const recentThree = recentDeliveries.slice(0, 3);
 
     return (
       <SafeAreaView className="flex-1 bg-white" edges={["top"]}>

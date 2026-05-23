@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common'
 import {
@@ -109,6 +110,32 @@ export class RidersController {
     @Body() dto: UpdateDeliveryStatusDto,
   ) {
     return this.ridersService.updateDeliveryStatus(rider.sub, orderId, dto)
+  }
+
+  // ─── Order by ID ──────────────────────────────────────────────────────────
+
+  @Get('delivery/:orderId')
+  @UseGuards(RiderAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get a specific delivery order assigned to this rider' })
+  getOrderById(
+    @CurrentRider() rider: { sub: string },
+    @Param('orderId') orderId: string,
+  ) {
+    return this.ridersService.getOrderById(rider.sub, orderId)
+  }
+
+  // ─── Delivery History ─────────────────────────────────────────────────────
+
+  @Get('me/delivery-history')
+  @UseGuards(RiderAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get past completed/cancelled deliveries for this rider' })
+  getDeliveryHistory(
+    @CurrentRider() rider: { sub: string },
+    @Query('limit') limit?: string,
+  ) {
+    return this.ridersService.getDeliveryHistory(rider.sub, limit ? parseInt(limit, 10) : 10)
   }
 
   // ─── Earnings ──────────────────────────────────────────────────────────────

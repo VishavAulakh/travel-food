@@ -26,21 +26,43 @@ import { LocationHeader } from "../../components/home/LocationHeader";
 import { CyclingSearchBar } from "../../components/home/CyclingSearchBar";
 import { QuickFilterChips } from "../../components/home/QuickFilterChips";
 import { PromoCarousel } from "../../components/home/PromoCarousel";
-import { restaurants as mockRestaurants } from "../../lib/mock/restaurants";
+import type { Restaurant } from "../../lib/mock/restaurants";
 import { cuisines } from "../../lib/mock/cuisines";
 import { haptics } from "../../lib/haptics";
+import { useAuthStore } from "../../store/auth";
+import { api } from "../../lib/api";
 
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
-// Simulated API call. Real impl will swap to BILLING backend later.
-const fetchRestaurants = () =>
-  new Promise<typeof mockRestaurants>((resolve) =>
-    setTimeout(() => resolve(mockRestaurants), 600)
-  );
+// Map API restaurant shape to the Restaurant type the UI components expect
+function mapApiRestaurant(r: any): Restaurant {
+  return {
+    id: r.branchId ?? r.id,
+    name: r.restaurantName ?? r.branchName ?? r.name ?? "Restaurant",
+    cuisines: r.cuisines ?? ["Indian"],
+    rating: r.rating ?? 4.2,
+    totalRatings: r.totalRatings ?? 0,
+    costForTwoPaise: r.zone?.minOrderPaise ?? r.costForTwoPaise ?? 30000,
+    deliveryMinutes: r.deliveryMinutes ?? 30,
+    distanceMeters: r.distanceKm != null ? Math.round(r.distanceKm * 1000) : (r.distanceMeters ?? 2000),
+    imageUrl: r.logoUrl ?? r.imageUrl ?? "",
+    area: r.address ?? r.area ?? "",
+    city: r.city ?? "",
+    isPure: r.isPure ?? "mixed",
+    isPromoted: r.isPromoted ?? false,
+    promoText: r.promoText,
+    promoCode: r.promoCode,
+    offers: r.offers,
+    hasFreeDelivery: r.zone?.deliveryFeePaise === 0 || r.hasFreeDelivery || false,
+    isOpen: r.isOpen ?? true,
+    closesAt: r.closesAt,
+  };
+}
 
 export default function HomeScreen() {
   const scrollY = useSharedValue(0);
   const [refreshing, setRefreshing] = useState(false);
+  const token = useAuthStore((s) => s.token);
 
   const {
     data: restaurants = [],
@@ -48,7 +70,10 @@ export default function HomeScreen() {
     refetch,
   } = useQuery({
     queryKey: ["home-restaurants"],
-    queryFn: fetchRestaurants,
+    queryFn: async () => {
+      const data = await api.get<any[]>("/delivery/restaurants", token ?? undefined);
+      return data.map(mapApiRestaurant);
+    },
   });
 
   const topPicks = useMemo(

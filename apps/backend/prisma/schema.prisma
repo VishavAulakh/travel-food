@@ -48,6 +48,7 @@ model restaurants {
   orders      deliveryOrders[]
   zones       deliveryZones[]
   hours       openingHours[]
+  staffUsers  restaurantUsers[]
 }
 
 model branches {
@@ -83,8 +84,20 @@ model restaurantUsers {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  restaurant   restaurants @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  branch       branches?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  restaurant   restaurants       @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  branch       branches?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  otps         restaurantOtps[]
+}
+
+model restaurantOtps {
+  id         String   @id @default(uuid())
+  userId     String
+  otp        String
+  expiresAt  DateTime
+  used       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  user restaurantUsers @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── Menu ─────────────────────────────────────────────────────────────────────

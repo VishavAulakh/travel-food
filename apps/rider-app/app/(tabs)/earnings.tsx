@@ -8,17 +8,32 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import { MotiView } from "moti";
-import {
-  earningsSummary,
-  todayEarnings,
-  weekEarnings,
-  monthEarnings,
-  type EarningEntry,
-} from "../../lib/mock/riderEarnings";
+import { useQuery } from "@tanstack/react-query";
+import { useRiderStore } from "../../store/rider";
+import { api } from "../../lib/api";
+import { type EarningEntry } from "../../lib/mock/riderEarnings";
 import { formatINR, formatRelativeTime } from "../../lib/format";
 import { shadows } from "../../lib/theme";
 import { EmptyState, AnimatedListItem } from "../../components";
 import { haptics } from "../../lib/haptics";
+
+type ApiEarnings = {
+  todayPaise: number;
+  weekPaise: number;
+  monthPaise: number;
+  totalDeliveries: number;
+  avgPerDeliveryPaise: number;
+  recentEarnings: Array<{
+    id: string;
+    orderId: string;
+    restaurantName: string;
+    amount: number;
+    distanceKm: number;
+    date: string;
+    timeSlot: EarningEntry['timeSlot'];
+  }>;
+  averageRating?: number;
+};
 
 type Period = "today" | "week" | "month";
 
@@ -101,7 +116,7 @@ function IncentiveBanner({ todayPaise }: { todayPaise: number }) {
   );
 }
 
-function PerformanceCard({ period }: { period: Period }) {
+function PerformanceCard({ period, averageRating }: { period: Period; averageRating: number }) {
   const periodLabel =
     period === "today" ? "Day" : period === "week" ? "Week" : "Month";
 
@@ -129,7 +144,7 @@ function PerformanceCard({ period }: { period: Period }) {
             Avg Rating
           </Text>
           <Text className="text-gold font-bold text-lg">
-            {earningsSummary.averageRating}★
+            {averageRating.toFixed(1)}★
           </Text>
         </View>
         {/* Divider */}
@@ -149,17 +164,41 @@ function PerformanceCard({ period }: { period: Period }) {
 export default function EarningsScreen() {
   const [period, setPeriod] = useState<Period>("today");
   const indicatorLeft = useSharedValue(0);
+  const token = useRiderStore((s) => s.token);
+
+  const { data: earningsData } = useQuery<ApiEarnings>({
+    queryKey: ['earnings'],
+    queryFn: () => api.get<ApiEarnings>('/riders/me/earnings', token ?? undefined),
+    enabled: !!token,
+  });
+
+  // Filter recentEarnings by period client-side
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - 6);
+  startOfWeek.setHours(0, 0, 0, 0);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const allEntries: EarningEntry[] = (earningsData?.recentEarnings ?? []).map((e) => ({
+    ...e,
+    amount: e.amount, // already in paise from API
+  }));
+
+  const todayEntries = allEntries.filter((e) => e.date.startsWith(todayStr));
+  const weekEntries = allEntries.filter((e) => new Date(e.date) >= startOfWeek);
+  const monthEntries = allEntries.filter((e) => new Date(e.date) >= startOfMonth);
 
   const periodData: Record<Period, EarningEntry[]> = {
-    today: todayEarnings,
-    week: weekEarnings,
-    month: monthEarnings,
+    today: todayEntries,
+    week: weekEntries,
+    month: monthEntries,
   };
 
   const periodPaise: Record<Period, number> = {
-    today: earningsSummary.todayPaise,
-    week: earningsSummary.weekPaise,
-    month: earningsSummary.monthPaise,
+    today: earningsData?.todayPaise ?? 0,
+    week: earningsData?.weekPaise ?? 0,
+    month: earningsData?.monthPaise ?? 0,
   };
 
   const handlePeriod = (id: Period, idx: number) => {
@@ -234,7 +273,7 @@ export default function EarningsScreen() {
           <>
             {/* Incentive banner — today only */}
             {period === "today" ? (
-              <IncentiveBanner todayPaise={earningsSummary.todayPaise} />
+              <IncentiveBanner todayPaise={earningsData?.todayPaise ?? 0} />
             ) : null}
 
             {/* Animated total */}
@@ -280,7 +319,7 @@ export default function EarningsScreen() {
             </View>
 
             {/* Performance summary card */}
-            <PerformanceCard period={period} />
+            <PerformanceCard period={period} averageRating={earningsData?.averageRating ?? 4.8} />
 
             {entries.length > 0 ? (
               <Text className="text-ink-900 font-bold text-sm mb-3">

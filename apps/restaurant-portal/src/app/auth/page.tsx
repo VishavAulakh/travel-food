@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import api from "@/lib/api";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -58,11 +59,15 @@ export default function AuthPage() {
   const handleSendOtp = async () => {
     if (phone.length !== 10) return;
     setIsLoading(true);
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 800));
-    setIsLoading(false);
-    setStep("otp");
-    toast.success("OTP sent to +91 " + phone);
+    try {
+      await api.post('/delivery/restaurant/auth/send-otp', { phone: '+91' + phone });
+      setStep("otp");
+      toast.success("OTP sent to +91 " + phone);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Failed to send OTP. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleOtpChange = (index: number, value: string) => {
@@ -94,17 +99,27 @@ export default function AuthPage() {
     const code = otp.join("");
     if (code.length !== 6) return;
     setIsLoading(true);
-    // Simulate API call — any 6-digit code works
-    await new Promise((r) => setTimeout(r, 800));
-    setIsLoading(false);
-    setAuth("mock-token", {
-      id: "r1",
-      name: "Paradise Biryani",
-      phone,
-      branchId: "b1",
-    });
-    toast.success("Welcome back!");
-    router.push("/");
+    try {
+      const res = await api.post<{
+        accessToken: string;
+        user: {
+          id: string;
+          name: string;
+          phone: string;
+          role: string;
+          restaurantId: string;
+          branchId: string | null;
+          restaurantName: string;
+        };
+      }>('/delivery/restaurant/auth/verify-otp', { phone: '+91' + phone, otp: otp.join('') });
+      setAuth(res.data.accessToken, res.data.user);
+      toast.success("Welcome back!");
+      router.push("/");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? "Invalid OTP. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleResend = async () => {

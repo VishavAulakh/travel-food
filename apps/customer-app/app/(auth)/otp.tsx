@@ -18,6 +18,7 @@ import { useAuthStore } from "../../store/auth";
 import { formatPhone } from "../../lib/format";
 import { haptics } from "../../lib/haptics";
 import { spring } from "../../lib/animations";
+import { api } from "../../lib/api";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -61,17 +62,24 @@ export default function OtpScreen() {
       Keyboard.dismiss();
       setLoading(true);
       setErrored(false);
-      // simulate network
-      await new Promise((r) => setTimeout(r, 800));
-      // mock auth
-      haptics.success();
-      setAuth("mock-token-" + Date.now(), {
-        id: "cust_001",
-        name: "Vishav Aulakh",
-        phone: String(phone),
-        email: "vishav@golocal.app",
-      });
-      router.replace("/(tabs)");
+      try {
+        const res = await api.post<{ accessToken: string; customer: { id: string; name: string | null; phone: string } }>(
+          '/delivery/customers/auth/verify-otp',
+          { phone: '+91' + phone, otp: finalCode }
+        );
+        haptics.success();
+        setAuth(res.accessToken, {
+          id: res.customer.id,
+          name: res.customer.name ?? phone,
+          phone: res.customer.phone,
+        });
+        router.replace('/(tabs)');
+      } catch {
+        haptics.error();
+        setErrored(true);
+      } finally {
+        setLoading(false);
+      }
     },
     [phone, setAuth]
   );

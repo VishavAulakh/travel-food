@@ -5,10 +5,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Bell, ClipboardList, PackageCheck, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { mockOrders } from "@/lib/mock/orders";
 import { useOrdersSocket } from "@/lib/hooks/use-orders-socket";
 import { OrderCard } from "@/components/orders/order-card";
 import { OrderColumn } from "@/components/orders/order-column";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import api from "@/lib/api";
 import type { DeliveryOrder, OrderStatus } from "@/types";
 
 // ─── Tab definition ───────────────────────────────────────────────────────────
@@ -51,7 +52,8 @@ function LiveIndicator({ connected }: { connected: boolean }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function OrdersPage() {
-  const [orders, setOrders] = useState<DeliveryOrder[]>(mockOrders);
+  const { token, user } = useAuthStore();
+  const [orders, setOrders] = useState<DeliveryOrder[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("new");
   const notifPermRef = useRef(false);
 
@@ -68,6 +70,17 @@ export default function OrdersPage() {
     }
   }, []);
 
+  // Fetch orders from API
+  useEffect(() => {
+    if (!token || !user?.branchId) return;
+    api
+      .get(`/delivery/restaurant/orders?branchId=${user.branchId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((res) => setOrders(res.data))
+      .catch(console.error);
+  }, [token, user?.branchId]);
+
   // ── Derived order slices ────────────────────────────────────────────────────
   const newOrders = orders.filter((o) => o.status === "placed");
   const activeOrders = orders.filter((o) =>
@@ -79,6 +92,7 @@ export default function OrdersPage() {
 
   // ── Socket integration ──────────────────────────────────────────────────────
   const { isConnected } = useOrdersSocket(
+    user?.branchId ?? null,
     (newOrder) => {
       setOrders((prev) => [newOrder, ...prev]);
       toast.success(`New order from ${newOrder.customerName}!`, {
@@ -97,47 +111,71 @@ export default function OrdersPage() {
     },
     (orderId, status) => {
       setOrders((prev) =>
-        prev.map((o) => (o.id === orderId ? { ...o, status } : o))
+        prev.map((o) => (o.id === orderId ? { ...o, status: status as OrderStatus } : o))
       );
     }
   );
 
   // ── Action handlers ─────────────────────────────────────────────────────────
-  const handleConfirm = (id: string, prepMinutes: number) => {
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === id
-          ? {
-              ...o,
-              status: "confirmed" as OrderStatus,
-              estimatedPrepMinutes: prepMinutes,
-              confirmedAt: new Date().toISOString(),
-            }
-          : o
-      )
-    );
-    toast.success("Order confirmed!", { description: `Prep time: ${prepMinutes} min` });
-    // TODO: PATCH /delivery/orders/:id/confirm
+  const handleConfirm = async (id: string, prepMinutes: number) => {
+    try {
+      await api.patch(
+        `/delivery/restaurant/orders/${id}/status`,
+        { status: 'confirmed' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === id
+            ? {
+                ...o,
+                status: "confirmed" as OrderStatus,
+                estimatedPrepMinutes: prepMinutes,
+                confirmedAt: new Date().toISOString(),
+              }
+            : o
+        )
+      );
+      toast.success("Order confirmed!", { description: `Prep time: ${prepMinutes} min` });
+    } catch {
+      toast.error("Failed to confirm order");
+    }
   };
 
-  const handleMarkReady = (id: string) => {
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === id
-          ? { ...o, status: "ready_for_pickup" as OrderStatus, readyAt: new Date().toISOString() }
-          : o
-      )
-    );
-    toast.success("Order marked as ready!", { description: "Notifying rider now." });
-    // TODO: PATCH /delivery/orders/:id/ready
+  const handleMarkReady = async (id: string) => {
+    try {
+      await api.patch(
+        `/delivery/restaurant/orders/${id}/status`,
+        { status: 'ready_for_pickup' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === id
+            ? { ...o, status: "ready_for_pickup" as OrderStatus, readyAt: new Date().toISOString() }
+            : o
+        )
+      );
+      toast.success("Order marked as ready!", { description: "Notifying rider now." });
+    } catch {
+      toast.error("Failed to update order");
+    }
   };
 
-  const handleDecline = (id: string) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === id ? { ...o, status: "cancelled" as OrderStatus } : o))
-    );
-    toast.error("Order declined");
-    // TODO: PATCH /delivery/orders/:id/cancel
+  const handleDecline = async (id: string) => {
+    try {
+      await api.patch(
+        `/delivery/restaurant/orders/${id}/status`,
+        { status: 'cancelled' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setOrders((prev) =>
+        prev.map((o) => (o.id === id ? { ...o, status: "cancelled" as OrderStatus } : o))
+      );
+      toast.error("Order declined");
+    } catch {
+      toast.error("Failed to decline order");
+    }
   };
 
   // ── Shared card renderer ────────────────────────────────────────────────────

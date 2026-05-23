@@ -3,6 +3,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
+import { io } from "socket.io-client";
+import { useAuthStore } from "../../store/auth";
 
 const STATUS_STEPS = ["placed", "confirmed", "preparing", "rider_assigned", "en_route", "delivered"];
 const STATUS_LABELS: Record<string, string> = {
@@ -53,10 +55,25 @@ export default function TrackingScreen() {
   const [riderLocation, setRiderLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
-    // TODO: connect Socket.io
-    // socket.emit("join_order_room", orderId);
-    // socket.on(`order:${orderId}:status_change`, ({ status }) => setStatus(status));
-    // socket.on(`order:${orderId}:rider_location`, ({ lat, lng }) => setRiderLocation({ lat, lng }));
+    const { token } = useAuthStore.getState();
+    if (!orderId) return;
+
+    const socket = io('http://localhost:3002', {
+      path: '/ws/socket.io',
+      transports: ['websocket'],
+    });
+
+    socket.on('connect', () => {
+      socket.emit('join_order_room', { orderId, token: token ?? '' });
+    });
+    socket.on('order_status_changed', (data: { status: string }) => {
+      setStatus(data.status);
+    });
+    socket.on('rider_location_update', (data: { lat: number; lng: number }) => {
+      setRiderLocation({ lat: data.lat, lng: data.lng });
+    });
+
+    return () => { socket.disconnect(); };
   }, [orderId]);
 
   const currentStep = STATUS_STEPS.indexOf(status);

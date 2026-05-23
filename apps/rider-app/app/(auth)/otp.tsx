@@ -7,6 +7,7 @@ import {
   Platform,
   NativeSyntheticEvent,
   TextInputKeyPressEventData,
+  Alert,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { MotiView } from "moti";
@@ -15,8 +16,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../../components/ui/Button";
 import { PressableScale } from "../../components/ui/PressableScale";
 import { useRiderStore } from "../../store/rider";
-import { mockRider } from "../../lib/mock/riderProfile";
 import { haptics } from "../../lib/haptics";
+import { api } from "../../lib/api";
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 30;
@@ -61,21 +62,32 @@ export default function OtpScreen() {
     haptics.medium();
     setLoading(true);
     try {
-      await new Promise((r) => setTimeout(r, 900));
-      setAuth("mock-token-rider", mockRider);
+      const finalCode = otp.join('');
+      const res = await api.post<{ accessToken: string; rider: { id: string; name: string; phone: string } }>(
+        '/riders/auth/verify-otp',
+        { phone: '+91' + phone, otp: finalCode }
+      );
+      setAuth(res.accessToken, { id: res.rider.id, name: res.rider.name, phone: res.rider.phone });
       haptics.success();
       router.replace("/(tabs)");
+    } catch (err: any) {
+      Alert.alert('Invalid OTP', err?.message ?? 'The code you entered is incorrect. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResend = () => {
+  const handleResend = async () => {
     if (countdown > 0) return;
     haptics.light();
     setCountdown(RESEND_SECONDS);
     setOtp(Array(OTP_LENGTH).fill(""));
     inputs.current[0]?.focus();
+    try {
+      await api.post('/riders/auth/send-otp', { phone: '+91' + phone });
+    } catch {
+      // silently ignore — countdown already reset
+    }
   };
 
   const displayPhone = phone

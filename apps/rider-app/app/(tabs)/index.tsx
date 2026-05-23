@@ -9,7 +9,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { MotiView, AnimatePresence } from "moti";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -19,6 +19,7 @@ import { useRiderStore } from "../../store/rider";
 import { formatINR } from "../../lib/format";
 import { haptics } from "../../lib/haptics";
 import { shadows } from "../../lib/theme";
+import { api } from "../../lib/api";
 import {
   DeliveryRequestCard,
   OnlineToggleButton,
@@ -27,12 +28,7 @@ import {
   EmptyState,
   Avatar,
 } from "../../components";
-import {
-  pendingRequests,
-  type DeliveryRequest,
-} from "../../lib/mock/deliveryRequests";
-import { earningsSummary } from "../../lib/mock/riderEarnings";
-import { riderProfile } from "../../lib/mock/riderProfile";
+import { type DeliveryRequest } from "../../lib/mock/deliveryRequests";
 
 const HOTSPOTS = ["Koramangala", "Indiranagar", "HSR Layout", "Whitefield"];
 const HOTSPOT_DISTANCES = [0.8, 1.3, 2.1, 0.5];
@@ -40,15 +36,40 @@ const HOTSPOT_DISTANCES = [0.8, 1.3, 2.1, 0.5];
 const GOAL_PAISE = 50_000; // ₹500 daily goal
 
 export default function OrdersScreen() {
-  const { isOnline, toggleOnline, setActiveOrder, rider } = useRiderStore();
+  const { isOnline, toggleOnline, setActiveOrder, rider, token } = useRiderStore();
+  const queryClient = useQueryClient();
   const [showToast, setShowToast] = useState(false);
   const [dismissed, setDismissed] = useState<string[]>([]);
 
   const { data: requests = [], refetch } = useQuery<DeliveryRequest[]>({
-    queryKey: ["pending-requests"],
-    queryFn: async () => pendingRequests.filter((r) => !dismissed.includes(r.id)),
+    queryKey: ["delivery-requests"],
+    queryFn: () =>
+      token
+        ? api.get<DeliveryRequest[]>('/riders/me/delivery-requests', token)
+        : Promise.resolve([]),
     refetchInterval: isOnline ? 15_000 : false,
-    enabled: isOnline,
+    enabled: isOnline && !!token,
+  });
+
+  const { data: earningsSummary } = useQuery<{
+    todayPaise: number;
+    weekPaise: number;
+    monthPaise: number;
+    totalDeliveries: number;
+    avgPerDeliveryPaise: number;
+    onlineHoursToday?: number;
+  }>({
+    queryKey: ['earnings'],
+    queryFn: () => api.get('/riders/me/earnings', token ?? undefined),
+    enabled: !!token,
+  });
+
+  const acceptMutation = useMutation({
+    mutationFn: (id: string) =>
+      api.post(`/riders/delivery/${id}/accept`, {}, token ?? undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['delivery-requests'] });
+    },
   });
 
   const visibleRequests = requests.filter((r) => !dismissed.includes(r.id));
@@ -62,12 +83,17 @@ export default function OrdersScreen() {
   };
 
   const handleAccept = useCallback(
-    (req: DeliveryRequest) => {
+    async (req: DeliveryRequest) => {
       haptics.success();
+      try {
+        await acceptMutation.mutateAsync(req.id);
+      } catch {
+        // If accept fails, still navigate — server may accept optimistically
+      }
       setActiveOrder(req.id);
       router.push(`/delivery/${req.id}`);
     },
-    [setActiveOrder]
+    [setActiveOrder, acceptMutation]
   );
 
   const handleDecline = useCallback((id: string) => {
@@ -75,10 +101,11 @@ export default function OrdersScreen() {
     setDismissed((prev) => [...prev, id]);
   }, []);
 
-  const displayName = rider?.name ?? riderProfile.name;
+  const displayName = rider?.name ?? 'Rider';
 
   // Daily goal progress animation
-  const goalProgress = Math.min(earningsSummary.todayPaise / GOAL_PAISE, 1);
+  const todayPaise = earningsSummary?.todayPaise ?? 0;
+  const goalProgress = Math.min(todayPaise / GOAL_PAISE, 1);
   const progressWidth = useSharedValue(0);
   useEffect(() => {
     progressWidth.value = withTiming(goalProgress, { duration: 900 });
@@ -86,9 +113,9 @@ export default function OrdersScreen() {
   const progressStyle = useAnimatedStyle(() => ({
     width: `${progressWidth.value * 100}%` as unknown as number,
   }));
-  const todayRupees = Math.round(earningsSummary.todayPaise / 100);
+  const todayRupees = Math.round(todayPaise / 100);
   const remainingRupees = Math.max(500 - todayRupees, 0);
-  const goalReached = earningsSummary.todayPaise >= GOAL_PAISE;
+  const goalReached = todayPaise >= GOAL_PAISE;
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
@@ -125,7 +152,6 @@ export default function OrdersScreen() {
           {/* Avatar + name */}
           <View className="flex-row items-center gap-3">
             <Avatar
-              uri={riderProfile.avatarUrl}
               name={displayName}
               size={40}
             />
@@ -137,7 +163,7 @@ export default function OrdersScreen() {
 
           {/* Streak chip (centered spacer) */}
           <View className="flex-1 items-center">
-            {earningsSummary.totalDeliveries > 5 && (
+            {(earningsSummary?.totalDeliveries ?? 0) > 5 && (
               <View className="bg-warning/10 px-2 py-1 rounded-full flex-row items-center gap-1">
                 <Text className="text-xs">🔥</Text>
                 <Text
@@ -178,7 +204,7 @@ export default function OrdersScreen() {
               Today
             </Text>
             <Text className="text-ink-900 font-bold text-lg">
-              {formatINR(earningsSummary.todayPaise)}
+              {formatINR(earningsSummary?.todayPaise ?? 0)}
             </Text>
           </View>
           <View className="items-center">
@@ -186,7 +212,7 @@ export default function OrdersScreen() {
               Deliveries
             </Text>
             <Text className="text-ink-900 font-bold text-lg">
-              {earningsSummary.totalDeliveries}
+              {earningsSummary?.totalDeliveries ?? 0}
             </Text>
           </View>
           <View className="items-end">
@@ -194,7 +220,7 @@ export default function OrdersScreen() {
               Online
             </Text>
             <Text className="text-ink-900 font-bold text-lg">
-              {earningsSummary.onlineHoursToday.toFixed(1)}h
+              {(earningsSummary?.onlineHoursToday ?? 0).toFixed(1)}h
             </Text>
           </View>
         </View>
@@ -240,9 +266,9 @@ export default function OrdersScreen() {
         {!isOnline ? (
           <AnimatedListItem index={0} className="mx-4">
             <EarningsCard
-              todayPaise={earningsSummary.todayPaise}
-              weekPaise={earningsSummary.weekPaise}
-              onlineHoursToday={earningsSummary.onlineHoursToday}
+              todayPaise={earningsSummary?.todayPaise ?? 0}
+              weekPaise={earningsSummary?.weekPaise ?? 0}
+              onlineHoursToday={earningsSummary?.onlineHoursToday ?? 0}
             />
             <View className="mt-6">
               <EmptyState

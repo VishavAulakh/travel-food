@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common'
@@ -449,6 +450,99 @@ export class FoodDeliveryService {
       discountPaise: result.discountPaise,
       message: result.message,
     }
+  }
+
+  // ─── Restaurant Auth ──────────────────────────────────────────────────────
+
+  async sendRestaurantOtp(dto: { phone: string }): Promise<{ message: string; devOtp: string }> {
+    const user = await this.prisma.restaurantUsers.findUnique({ where: { phone: dto.phone } })
+    if (!user) throw new NotFoundException('Restaurant user not found. Contact your admin.')
+
+    await this.prisma.restaurantOtps.create({
+      data: {
+        userId: user.id,
+        otp: '123456',
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      },
+    })
+    return { message: 'OTP sent', devOtp: '123456' }
+  }
+
+  async verifyRestaurantOtp(dto: { phone: string; otp: string }) {
+    const user = await this.prisma.restaurantUsers.findUnique({
+      where: { phone: dto.phone },
+      include: { restaurant: { select: { name: true } } },
+    })
+    if (!user) throw new UnauthorizedException('User not found')
+
+    const otpRecord = await this.prisma.restaurantOtps.findFirst({
+      where: {
+        userId: user.id,
+        otp: dto.otp,
+        used: false,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!otpRecord) throw new UnauthorizedException('Invalid or expired OTP')
+
+    await this.prisma.restaurantOtps.update({ where: { id: otpRecord.id }, data: { used: true } })
+
+    const accessToken = this.jwtService.sign(
+      { sub: user.id, restaurantId: user.restaurantId, branchId: user.branchId, type: 'restaurant', role: user.role },
+      { secret: process.env.JWT_SECRET ?? 'travel-food-local-secret', expiresIn: '30d' },
+    )
+
+    return {
+      accessToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        phone: user.phone,
+        role: user.role,
+        restaurantId: user.restaurantId,
+        branchId: user.branchId,
+        restaurantName: user.restaurant.name,
+      },
+    }
+  }
+
+  // ─── Restaurant Orders ────────────────────────────────────────────────────
+
+  async getRestaurantOrders(restaurantId: string, branchId?: string) {
+    const where: any = { restaurantId }
+    if (branchId) where.branchId = branchId
+
+    return this.prisma.deliveryOrders.findMany({
+      where,
+      include: {
+        items: true,
+        customer: { select: { id: true, name: true, phone: true } },
+        rider: { select: { id: true, name: true, phone: true, vehicleType: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    })
+  }
+
+  async updateRestaurantOrderStatus(orderId: string, status: string, restaurantId: string) {
+    const order = await this.prisma.deliveryOrders.findUnique({ where: { id: orderId } })
+    if (!order) throw new NotFoundException('Order not found')
+    if (order.restaurantId !== restaurantId) throw new ForbiddenException('Access denied')
+
+    const timestampMap: Record<string, string> = {
+      confirmed: 'confirmedAt',
+      preparing: 'prepStartedAt',
+      ready_for_pickup: 'readyAt',
+      picked_up: 'pickedUpAt',
+      delivered: 'deliveredAt',
+      cancelled: 'cancelledAt',
+    }
+    const tsField = timestampMap[status]
+    const data: any = { status }
+    if (tsField) data[tsField] = new Date()
+
+    return this.prisma.deliveryOrders.update({ where: { id: orderId }, data })
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────

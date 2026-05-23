@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -18,6 +19,8 @@ import { SendCustomerOtpDto, VerifyCustomerOtpDto } from './dto/customer-otp.dto
 import { PlaceOrderDto } from './dto/place-order.dto'
 import { CustomerAuthGuard } from './guards/customer-auth.guard'
 import { CurrentCustomer } from './decorators/current-customer.decorator'
+import { RestaurantAuthGuard } from './guards/restaurant-auth.guard'
+import { CurrentRestaurantUser } from './decorators/current-restaurant-user.decorator'
 
 interface CustomerPayload {
   sub: string
@@ -28,6 +31,10 @@ interface ValidatePromoBody {
   code: string
   subtotalPaise: number
 }
+
+interface RestaurantOtpBody { phone: string }
+interface VerifyRestaurantOtpBody { phone: string; otp: string }
+interface UpdateRestaurantOrderStatusBody { status: string }
 
 @ApiTags('food-delivery')
 @Controller('delivery')
@@ -105,5 +112,45 @@ export class FoodDeliveryController {
     @Param('id') orderId: string,
   ) {
     return this.foodDeliveryService.getOrder(customer.sub, orderId)
+  }
+
+  // ─── Restaurant Auth ─────────────────────────────────────────────────────
+
+  @Post('restaurant/auth/send-otp')
+  @ApiOperation({ summary: 'Send OTP to restaurant staff phone' })
+  sendRestaurantOtp(@Body() body: RestaurantOtpBody) {
+    return this.foodDeliveryService.sendRestaurantOtp(body)
+  }
+
+  @Post('restaurant/auth/verify-otp')
+  @ApiOperation({ summary: 'Verify restaurant staff OTP and get JWT' })
+  verifyRestaurantOtp(@Body() body: VerifyRestaurantOtpBody) {
+    return this.foodDeliveryService.verifyRestaurantOtp(body)
+  }
+
+  // ─── Restaurant Orders ───────────────────────────────────────────────────
+
+  @Get('restaurant/orders')
+  @UseGuards(RestaurantAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get orders for authenticated restaurant' })
+  @ApiQuery({ name: 'branchId', required: false, type: String })
+  getRestaurantOrders(
+    @CurrentRestaurantUser() user: any,
+    @Query('branchId') branchId?: string,
+  ) {
+    return this.foodDeliveryService.getRestaurantOrders(user.restaurantId, branchId)
+  }
+
+  @Patch('restaurant/orders/:id/status')
+  @UseGuards(RestaurantAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update order status (restaurant-facing)' })
+  updateRestaurantOrderStatus(
+    @CurrentRestaurantUser() user: any,
+    @Param('id') orderId: string,
+    @Body() body: UpdateRestaurantOrderStatusBody,
+  ) {
+    return this.foodDeliveryService.updateRestaurantOrderStatus(orderId, body.status, user.restaurantId)
   }
 }

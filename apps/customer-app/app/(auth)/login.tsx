@@ -17,6 +17,7 @@ import { Button, FadeInImage } from "../../components";
 import { PressableScale } from "../../components/ui/PressableScale";
 import { haptics } from "../../lib/haptics";
 import { spring } from "../../lib/animations";
+import { api } from "../../lib/api";
 
 // Curated, appetite-stirring Indian thali hero (Unsplash, high-res, free to use)
 const HERO_URI =
@@ -31,15 +32,24 @@ function formatProgressive(digits: string) {
 
 export default function LoginScreen() {
   const [phone, setPhone] = useState("");
+  const [loading, setLoading] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   const digits = useMemo(() => phone.replace(/\D/g, "").slice(0, 10), [phone]);
   const canContinue = digits.length === 10;
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!canContinue) return;
     haptics.medium();
     Keyboard.dismiss();
+    setLoading(true);
+    try {
+      await api.post('/delivery/customers/auth/send-otp', { phone: '+91' + digits });
+    } catch {
+      // Silently ignore — OTP screen shows dev OTP anyway
+    } finally {
+      setLoading(false);
+    }
     router.push({ pathname: "/(auth)/otp", params: { phone: digits } });
   };
 
@@ -180,9 +190,10 @@ export default function LoginScreen() {
                 style={{ marginTop: 18 }}
               >
                 <Button
-                  label="Continue"
+                  label={loading ? "Sending OTP..." : "Continue"}
                   onPress={handleContinue}
-                  disabled={!canContinue}
+                  disabled={!canContinue || loading}
+                  loading={loading}
                   size="lg"
                   fullWidth
                   icon="arrow-forward"

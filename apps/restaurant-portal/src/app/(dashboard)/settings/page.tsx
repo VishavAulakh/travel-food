@@ -160,7 +160,7 @@ function HoursRow({
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const restaurant = useAuthStore((s) => s.restaurant);
+  const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
   // Section 1: Restaurant status
@@ -387,7 +387,7 @@ export default function SettingsPage() {
               </label>
               <div className="flex items-center rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
                 <span className="text-sm text-foreground">
-                  {restaurant?.name ?? "Paradise Biryani"}
+                  {user?.restaurantName ?? user?.name ?? "Paradise Biryani"}
                 </span>
                 <span className="ml-auto text-xs text-muted-foreground/50 italic">
                   read-only
@@ -402,7 +402,7 @@ export default function SettingsPage() {
               </label>
               <div className="flex items-center rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
                 <span className="text-sm text-foreground">
-                  {restaurant?.phone ?? "+91 98765 00000"}
+                  {user?.phone ?? "+91 98765 00000"}
                 </span>
                 <span className="ml-auto text-xs text-muted-foreground/50 italic">
                   read-only

@@ -5,6 +5,7 @@ import { io, Socket } from "socket.io-client";
 import type { DeliveryOrder, OrderStatus } from "@/types";
 
 export function useOrdersSocket(
+  branchId: string | null,
   onNewOrder: (order: DeliveryOrder) => void,
   onStatusChange: (orderId: string, status: OrderStatus) => void
 ): { isConnected: boolean } {
@@ -19,23 +20,35 @@ export function useOrdersSocket(
 
   useEffect(() => {
     // localStorage is only available in the browser
-    const token =
-      typeof window !== "undefined"
-        ? (localStorage.getItem("restaurant-auth") ?? "")
-        : "";
-
-    const socket: Socket = io(
-      process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:3002",
-      {
-        auth: { token },
-        autoConnect: false,
+    let token = "";
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("restaurant-auth");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          token = parsed?.state?.token ?? "";
+        }
+      } catch {
+        // ignore parse errors
       }
-    );
+    }
+
+    const baseUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:3002";
+
+    const socket: Socket = io(`${baseUrl}/ws`, {
+      auth: { token },
+      autoConnect: false,
+    });
 
     socketRef.current = socket;
 
     // ── Connection events ─────────────────────────────────────────────────
-    socket.on("connect", () => setIsConnected(true));
+    socket.on("connect", () => {
+      setIsConnected(true);
+      if (branchId && token) {
+        socket.emit("join_restaurant_room", { branchId, token });
+      }
+    });
     socket.on("disconnect", () => setIsConnected(false));
     socket.on("connect_error", () => setIsConnected(false));
 
@@ -65,8 +78,9 @@ export function useOrdersSocket(
       socket.disconnect();
       socketRef.current = null;
     };
+    // Re-connect when branchId changes so we join the correct room
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // mount/unmount only
+  }, [branchId]);
 
   return { isConnected };
 }

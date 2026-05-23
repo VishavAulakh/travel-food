@@ -4,8 +4,10 @@ import { useLocalSearchParams, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
+import { useQuery } from "@tanstack/react-query";
 import { useRiderStore } from "../../store/rider";
-import { getRequestById } from "../../lib/mock/deliveryRequests";
+import { getRequestById, type DeliveryRequest } from "../../lib/mock/deliveryRequests";
+import { api } from "../../lib/api";
 import { formatINR } from "../../lib/format";
 import { haptics } from "../../lib/haptics";
 import { shadows } from "../../lib/theme";
@@ -49,14 +51,43 @@ function stepSubtitle(step: Step, customerName: string, estimatedMinutes: number
 
 export default function DeliveryScreen() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
-  const request = getRequestById(orderId ?? "");
-  const setActiveOrder = useRiderStore((s) => s.setActiveOrder);
+  const { setActiveOrder, token } = useRiderStore();
 
   const [step, setStep] = useState<Step>(1);
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(
     null
   );
   const watchRef = useRef<Location.LocationSubscription | null>(null);
+
+  // Fetch order details from API; fall back to mock if not found
+  const { data: apiRequest } = useQuery<DeliveryRequest>({
+    queryKey: ['delivery-order', orderId],
+    queryFn: () => api.get<DeliveryRequest>(`/riders/delivery/${orderId}`, token ?? undefined),
+    enabled: !!orderId && !!token,
+    // Stale time: keep data fresh during active delivery
+    staleTime: 10_000,
+  });
+  const request = apiRequest ?? getRequestById(orderId ?? "");
+
+  // Post location every 5 seconds to the server
+  useEffect(() => {
+    const locationInterval = setInterval(async () => {
+      if (!token) return;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = await Location.getCurrentPositionAsync({});
+        await api.post(
+          '/riders/me/location',
+          { lat: loc.coords.latitude, lng: loc.coords.longitude },
+          token
+        ).catch(() => {});
+      } catch {
+        // Silently ignore location errors — best-effort
+      }
+    }, 5000);
+    return () => clearInterval(locationInterval);
+  }, [token]);
 
   useEffect(() => {
     startTracking();
@@ -83,10 +114,24 @@ export default function DeliveryScreen() {
     );
   };
 
+  const updateDeliveryStatus = async (status: 'arrived_at_restaurant' | 'picked_up' | 'delivered') => {
+    if (!orderId || !token) return;
+    try {
+      await api.patch(`/riders/delivery/${orderId}/status`, { status }, token);
+    } catch {
+      // Best-effort — don't block the UI step transition
+    }
+  };
+
   const handleAction = () => {
     if (step < 3) {
-      if (step === 2) haptics.success();
-      else haptics.medium();
+      if (step === 1) {
+        haptics.medium();
+        updateDeliveryStatus('arrived_at_restaurant');
+      } else if (step === 2) {
+        haptics.success();
+        updateDeliveryStatus('picked_up');
+      }
       setStep((s) => (s + 1) as Step);
       return;
     }
@@ -95,8 +140,9 @@ export default function DeliveryScreen() {
       { text: "Cancel", style: "cancel" },
       {
         text: "Mark Delivered",
-        onPress: () => {
+        onPress: async () => {
           haptics.success();
+          await updateDeliveryStatus('delivered');
           watchRef.current?.remove();
           setActiveOrder(null);
           router.replace("/(tabs)");

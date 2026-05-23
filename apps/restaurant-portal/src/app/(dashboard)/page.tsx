@@ -159,7 +159,7 @@ const quickActions = [
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const restaurant = useAuthStore((s) => s.restaurant);
+  const user = useAuthStore((s) => s.user);
   const [accepting, setAccepting] = useState(true);
 
   const today = new Date().toLocaleDateString("en-IN", {
@@ -210,7 +210,7 @@ export default function DashboardPage() {
           <h1 className="text-xl font-bold text-foreground md:text-2xl">
             {greeting},{" "}
             <span className="text-primary">
-              {restaurant?.name ?? "Paradise Biryani"}
+              {user?.restaurantName ?? user?.name ?? "Paradise Biryani"}
             </span>{" "}
             👋
           </h1>

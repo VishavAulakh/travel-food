@@ -24,7 +24,7 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { restaurant, logout } = useAuthStore();
+  const { user, logout } = useAuthStore();
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
@@ -47,7 +47,7 @@ export function Sidebar() {
         </div>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-foreground truncate">
-            {restaurant?.name ?? "Restaurant"}
+            {user?.restaurantName ?? user?.name ?? "Restaurant"}
           </p>
           <p className="text-xs text-muted-foreground">Restaurant Partner</p>
         </div>

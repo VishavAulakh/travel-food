@@ -1,0 +1,33 @@
+version: '3.9'
+
+services:
+  travel-food-postgres:
+    image: postgres:16-alpine
+    container_name: travel-food-postgres
+    environment:
+      POSTGRES_DB: travel_food
+      POSTGRES_USER: travel_food
+      POSTGRES_PASSWORD: travel_food_dev
+    ports:
+      - '5435:5432'
+    volumes:
+      - travel_food_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U travel_food -d travel_food']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  travel-food-redis:
+    image: redis:7-alpine
+    container_name: travel-food-redis
+    ports:
+      - '6383:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  travel_food_pg_data:

@@ -3,13 +3,36 @@ import { View, Text, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useQuery } from "@tanstack/react-query";
 import { useRiderStore } from "../../store/rider";
-import { riderProfile } from "../../lib/mock/riderProfile";
-import { earningsSummary } from "../../lib/mock/riderEarnings";
+import { api } from "../../lib/api";
 import { formatINR } from "../../lib/format";
 import { haptics } from "../../lib/haptics";
 import { shadows } from "../../lib/theme";
 import { Avatar, Button, Divider, AnimatedListItem, PressableScale } from "../../components";
+
+type ApiProfile = {
+  id: string;
+  name: string;
+  phone: string;
+  avatarUrl?: string;
+  vehicleType?: string;
+  vehicleNumber?: string;
+  rating?: number;
+  totalRatings?: number;
+  totalDeliveries?: number;
+  joinedDate?: string;
+  isVerified?: boolean;
+  bankAccount?: { bankName: string; last4: string };
+  documents?: {
+    aadhar?: { verified: boolean };
+    drivingLicense?: { verified: boolean; number: string };
+    vehicleRC?: { verified: boolean; number: string };
+  };
+  monthPaise?: number;
+  totalDeliveriesMonthly?: number;
+  avgPerDeliveryPaise?: number;
+};
 
 function DocBadge({ verified }: { verified: boolean }) {
   return (
@@ -61,7 +84,23 @@ function InfoRow({
 }
 
 export default function ProfileScreen() {
-  const logout = useRiderStore((s) => s.logout);
+  const { logout, token, rider } = useRiderStore();
+
+  const { data: profile } = useQuery<ApiProfile>({
+    queryKey: ['rider-profile'],
+    queryFn: () => api.get<ApiProfile>('/riders/me/profile', token ?? undefined),
+    enabled: !!token,
+  });
+
+  const { data: earningsData } = useQuery<{
+    monthPaise: number;
+    totalDeliveries: number;
+    avgPerDeliveryPaise: number;
+  }>({
+    queryKey: ['earnings'],
+    queryFn: () => api.get('/riders/me/earnings', token ?? undefined),
+    enabled: !!token,
+  });
 
   const handleLogout = () => {
     Alert.alert("Log out", "Are you sure you want to log out?", [
@@ -77,10 +116,25 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const joinedYear = new Date(riderProfile.joinedDate).getFullYear();
+  // Merge API profile with rider store data as fallback
+  const name = profile?.name ?? rider?.name ?? 'Rider';
+  const phone = profile?.phone ?? rider?.phone ?? '';
+  const avatarUrl = profile?.avatarUrl;
+  const vehicleType = profile?.vehicleType ?? 'scooter';
+  const vehicleNumber = profile?.vehicleNumber ?? '—';
+  const rating = profile?.rating ?? 0;
+  const totalRatings = profile?.totalRatings ?? 0;
+  const totalDeliveries = profile?.totalDeliveries ?? 0;
+  const joinedDate = profile?.joinedDate ?? new Date().toISOString();
+  const isVerified = profile?.isVerified ?? false;
+  const bankAccount = profile?.bankAccount;
+  const documents = profile?.documents;
 
-  const avgPerDelivery = Math.round(
-    earningsSummary.monthPaise / Math.max(earningsSummary.totalDeliveries, 1)
+  const joinedYear = new Date(joinedDate).getFullYear();
+  const monthPaise = earningsData?.monthPaise ?? 0;
+  const totalDeliveriesCount = earningsData?.totalDeliveries ?? totalDeliveries;
+  const avgPerDelivery = earningsData?.avgPerDeliveryPaise ?? Math.round(
+    monthPaise / Math.max(totalDeliveriesCount, 1)
   );
 
   return (
@@ -91,19 +145,19 @@ export default function ProfileScreen() {
           <View className="items-center py-8 px-4">
             <View className="relative mb-4">
               <Avatar
-                uri={riderProfile.avatarUrl}
-                name={riderProfile.name}
+                uri={avatarUrl}
+                name={name}
                 size={88}
               />
-              {riderProfile.isVerified ? (
+              {isVerified ? (
                 <View className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-success border-2 border-white items-center justify-center">
                   <Ionicons name="checkmark" size={13} color="#FFFFFF" />
                 </View>
               ) : null}
             </View>
-            <Text className="text-ink-900 text-xl font-bold">{riderProfile.name}</Text>
-            <Text className="text-ink-400 text-sm mt-0.5">{riderProfile.phone}</Text>
-            {riderProfile.isVerified ? (
+            <Text className="text-ink-900 text-xl font-bold">{name}</Text>
+            <Text className="text-ink-400 text-sm mt-0.5">{phone}</Text>
+            {isVerified ? (
               <View className="mt-2 bg-success/10 px-3 py-1 rounded-full flex-row gap-1.5 items-center">
                 <Ionicons name="shield-checkmark" size={12} color="#16A34A" />
                 <Text className="text-success text-xs font-semibold">Verified Rider</Text>
@@ -127,33 +181,33 @@ export default function ProfileScreen() {
           <View className="bg-white rounded-2xl p-4 flex-row justify-around" style={shadows.card}>
             <View className="items-center">
               <Text className="text-ink-900 text-2xl font-bold">
-                {riderProfile.rating.toFixed(1)}
+                {rating.toFixed(1)}
               </Text>
               <View className="flex-row gap-0.5 my-1">
                 {[1, 2, 3, 4, 5].map((s) => (
                   <Ionicons
                     key={s}
-                    name={s <= Math.round(riderProfile.rating) ? "star" : "star-outline"}
+                    name={s <= Math.round(rating) ? "star" : "star-outline"}
                     size={14}
                     color="#FC5F30"
                   />
                 ))}
               </View>
               <Text className="text-ink-400 text-xs">
-                {riderProfile.totalRatings} ratings
+                {totalRatings} ratings
               </Text>
             </View>
             <View className="w-px bg-ink-100" />
             <View className="items-center">
               <Text className="text-ink-900 text-2xl font-bold">
-                {riderProfile.totalDeliveries.toLocaleString("en-IN")}
+                {totalDeliveries.toLocaleString("en-IN")}
               </Text>
               <Text className="text-ink-400 text-xs mt-1">Total Deliveries</Text>
             </View>
             <View className="w-px bg-ink-100" />
             <View className="items-center">
               <Text className="text-ink-900 text-2xl font-bold">
-                {formatINR(earningsSummary.monthPaise)}
+                {formatINR(monthPaise)}
               </Text>
               <Text className="text-ink-400 text-xs mt-1">This Month</Text>
             </View>
@@ -203,7 +257,7 @@ export default function ProfileScreen() {
             <View className="flex-row">
               <View className="flex-1 items-center">
                 <Text className="text-ink-900 font-bold text-lg">
-                  {earningsSummary.totalDeliveries}
+                  {totalDeliveriesCount}
                 </Text>
                 <Text className="text-ink-400 text-2xs text-center mt-0.5">
                   Total{"\n"}deliveries
@@ -212,7 +266,7 @@ export default function ProfileScreen() {
               <View className="w-px bg-brand/10 mx-2" />
               <View className="flex-1 items-center">
                 <Text className="text-ink-900 font-bold text-lg">
-                  {formatINR(earningsSummary.monthPaise)}
+                  {formatINR(monthPaise)}
                 </Text>
                 <Text className="text-ink-400 text-2xs text-center mt-0.5">
                   This month{"\n"}earnings
@@ -242,15 +296,15 @@ export default function ProfileScreen() {
               icon="bicycle"
               label="Vehicle type"
               value={
-                riderProfile.vehicleType.charAt(0).toUpperCase() +
-                riderProfile.vehicleType.slice(1)
+                vehicleType.charAt(0).toUpperCase() +
+                vehicleType.slice(1)
               }
             />
             <Divider />
             <InfoRow
               icon="card"
               label="Registration number"
-              value={riderProfile.vehicleNumber}
+              value={vehicleNumber}
             />
           </View>
         </AnimatedListItem>
@@ -268,7 +322,7 @@ export default function ProfileScreen() {
                 <Ionicons name="id-card" size={16} color="#737373" />
               </View>
               <Text className="text-ink-900 font-semibold text-sm flex-1">Aadhaar Card</Text>
-              <DocBadge verified={riderProfile.documents.aadhar.verified} />
+              <DocBadge verified={documents?.aadhar?.verified ?? false} />
             </View>
 
             <Divider />
@@ -279,11 +333,13 @@ export default function ProfileScreen() {
               </View>
               <View className="flex-1">
                 <Text className="text-ink-900 font-semibold text-sm">Driving License</Text>
-                <Text className="text-ink-400 text-xs mt-0.5">
-                  {riderProfile.documents.drivingLicense.number}
-                </Text>
+                {documents?.drivingLicense?.number ? (
+                  <Text className="text-ink-400 text-xs mt-0.5">
+                    {documents.drivingLicense.number}
+                  </Text>
+                ) : null}
               </View>
-              <DocBadge verified={riderProfile.documents.drivingLicense.verified} />
+              <DocBadge verified={documents?.drivingLicense?.verified ?? false} />
             </View>
 
             <Divider />
@@ -294,11 +350,13 @@ export default function ProfileScreen() {
               </View>
               <View className="flex-1">
                 <Text className="text-ink-900 font-semibold text-sm">Vehicle RC</Text>
-                <Text className="text-ink-400 text-xs mt-0.5">
-                  {riderProfile.documents.vehicleRC.number}
-                </Text>
+                {documents?.vehicleRC?.number ? (
+                  <Text className="text-ink-400 text-xs mt-0.5">
+                    {documents.vehicleRC.number}
+                  </Text>
+                ) : null}
               </View>
-              <DocBadge verified={riderProfile.documents.vehicleRC.verified} />
+              <DocBadge verified={documents?.vehicleRC?.verified ?? false} />
             </View>
           </View>
         </AnimatedListItem>
@@ -313,13 +371,13 @@ export default function ProfileScreen() {
             <InfoRow
               icon="business"
               label="Bank"
-              value={riderProfile.bankAccount.bankName}
+              value={bankAccount?.bankName ?? '—'}
             />
             <Divider />
             <InfoRow
               icon="wallet"
               label="Account"
-              value={`••••  ••••  ••••  ${riderProfile.bankAccount.last4}`}
+              value={bankAccount?.last4 ? `••••  ••••  ••••  ${bankAccount.last4}` : '—'}
             />
           </View>
         </AnimatedListItem>

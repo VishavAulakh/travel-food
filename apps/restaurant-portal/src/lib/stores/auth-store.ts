@@ -1,17 +1,20 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-type Restaurant = {
+type RestaurantUser = {
   id: string;
   name: string;
   phone: string;
-  branchId: string;
+  role: string;
+  restaurantId: string;
+  branchId: string | null;
+  restaurantName: string;
 };
 
 type AuthState = {
   token: string | null;
-  restaurant: Restaurant | null;
-  setAuth: (token: string, restaurant: Restaurant) => void;
+  user: RestaurantUser | null;
+  setAuth: (token: string, user: RestaurantUser) => void;
   logout: () => void;
 };
 
@@ -19,10 +22,10 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       token: null,
-      restaurant: null,
-      setAuth: (token, restaurant) => set({ token, restaurant }),
+      user: null,
+      setAuth: (token, user) => set({ token, user }),
       logout: () => {
-        set({ token: null, restaurant: null });
+        set({ token: null, user: null });
         if (typeof window !== "undefined") {
           localStorage.removeItem("restaurant-auth");
           window.location.href = "/auth";
