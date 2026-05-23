@@ -1,7 +1,6 @@
 import { Redirect } from "expo-router";
-import { useAuthStore } from "../store/auth";
 
+// DEV: bypass auth to preview UI — restore token check before production
 export default function Index() {
-  const token = useAuthStore((s) => s.token);
-  return <Redirect href={token ? "/(tabs)" : "/(auth)/login"} />;
+  return <Redirect href="/(tabs)" />;
 }

@@ -1,13 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { createMMKV } from "react-native-mmkv";
-
-const mmkv = createMMKV({ id: "rider-auth" });
-const mmkvStorage = {
-  getItem: (key: string) => mmkv.getString(key) ?? null,
-  setItem: (key: string, value: string) => mmkv.set(key, value),
-  removeItem: (key: string) => mmkv.remove(key),
-};
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type Rider = { id: string; name: string; phone: string };
 
@@ -36,7 +29,7 @@ export const useRiderStore = create<RiderState>()(
     }),
     {
       name: "rider",
-      storage: createJSONStorage(() => mmkvStorage),
+      storage: createJSONStorage(() => AsyncStorage),
     }
   )
 );
